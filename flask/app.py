@@ -1,49 +1,39 @@
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, request, send_file, jsonify
+from flask_cors import CORS
+import yt_dlp
+import os
 
 app = Flask(__name__)
+CORS(app)  # Allow frontend requests from different domains
 
-# A simple in-memory structure to store tasks
-tasks = []
+DOWNLOAD_PATH = "downloads"
 
-@app.route('/', methods=['GET'])
-def home():
-    # Display existing tasks and a form to add a new task
-    html = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Todo List</title>
-</head>
-<body>
-    <h1>Todo List</h1>
-    <form action="/add" method="POST">
-        <input type="text" name="task" placeholder="Enter a new task">
-        <input type="submit" value="Add Task">
-    </form>
-    <ul>
-        {% for task in tasks %}
-        <li>{{ task }} <a href="/delete/{{ loop.index0 }}">x</a></li>
-        {% endfor %}
-    </ul>
-</body>
-</html>
-'''
-    return render_template_string(html, tasks=tasks)
+if not os.path.exists(DOWNLOAD_PATH):
+    os.makedirs(DOWNLOAD_PATH)
 
-@app.route('/add', methods=['POST'])
-def add_task():
-    # Add a new task from the form data
-    task = request.form.get('task')
-    if task:
-        tasks.append(task)
-    return home()
+@app.route("/download", methods=["POST"])
+def download_video():
+    try:
+        data = request.get_json()
+        video_url = data.get("url")
 
-@app.route('/delete/<int:index>', methods=['GET'])
-def delete_task(index):
-    # Delete a task based on its index
-    if index < len(tasks):
-        tasks.pop(index)
-    return home()
+        if not video_url:
+            return jsonify({"error": "No URL provided"}), 400
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
+            'outtmpl': f"{DOWNLOAD_PATH}/video.mp4",
+            'merge_output_format': 'mp4'
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([video_url])
+
+        return send_file(f"{DOWNLOAD_PATH}/video.mp4", as_attachment=True)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
